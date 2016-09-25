@@ -23,10 +23,11 @@ int maxNrOfCharacters=...;
 {Scene} Scenes = ...;
 
 dvar int CharactersPlayedByActor[Characters] in 0..card(Characters);
-dexpr int nrOfActors=  sum(actorNr in 0..card(Characters)) count(CharactersPlayedByActor, actorNr)>0;
+dexpr int nrOfActors=  sum(actorNr in 0..card(Characters)) (count(CharactersPlayedByActor, actorNr)>0);
 
 execute{
 	cp.param.Workers = 1;
+	//cp.param.TimeLimit = 5;	
 }
 minimize nrOfActors;
 subject to{
@@ -51,6 +52,16 @@ subject to{
 	//An actor can only play one character per scene
 	forall(s in Scenes){
 		allDifferent(all(c1 in Characters:c1.name in s.characters) CharactersPlayedByActor[c1]);
+	}
+	//An actor that plays a leading character doesn't play any other characters
+	forall(lc in Characters:lc.name in LeadingCharacters){
+		forall(c in Characters:c!=lc){
+			CharactersPlayedByActor[lc]!=CharactersPlayedByActor[c];
+		}	
+	}
+	//max nr of character per actor
+	forall(actorNr in 0..card(Characters)){
+		count(CharactersPlayedByActor, actorNr)<=maxNrOfCharacters;	
 	}		
 }
 
