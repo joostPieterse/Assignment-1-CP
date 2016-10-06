@@ -15,22 +15,40 @@ tuple Scene {
 string name;
 {string} characters;
 }
-
+tuple ScenesByCharacter {
+string character;
+{string} scenes;
+}
 {string} CharacterTypes=...;
 {Character} Characters=...;
 {string} LeadingCharacters=...;
 int maxNrOfCharacters=...;
 {Scene} Scenes = ...;
-
-dvar int CharactersPlayedByActor[Characters] in 0..card(Characters);
-dexpr int nrOfActors=  sum(actorNr in 0..card(Characters)) (count(CharactersPlayedByActor, actorNr)>0);
+dvar int CharactersPlayedByActor[Characters] in 0..card(Characters)-1;
+dexpr int nrOfActors=  sum(actorNr in 0..card(Characters)-1) (count(CharactersPlayedByActor, actorNr)>0);
+ScenesByCharacter sceneCharacterList[Characters];
 
 execute{
 	cp.param.Workers = 1;
 	//cp.param.TimeLimit = 5;	
+	/*for(var c in Characters){
+		{string} scenesOfCharacter;		
+		for(var s in Scenes){
+			if(ord(s.characters, c)>=0){
+			
+				{string} test =s.name;			
+			
+				scenesOfCharacters=scenesOfCharacters union	test;		 
+			}
+		}	
+	
+	}*/
 }
 minimize nrOfActors;
 subject to{
+	forall(c in Characters){
+		CharactersPlayedByActor[c]<nrOfActors;	
+	}
 	//An actor plays a character of his own type
 	forall(c1 in Characters){
 		forall(c2 in Characters){
@@ -65,16 +83,27 @@ subject to{
 	}		
 }
 
-/*
+int nrOfActorsOfType[ct in CharacterTypes];
+{Character} ActorToCharacter[i in 0..nrOfActors-1];
 execute {
-  	writeln("Actors needed: ", NrOfActorsNeeded);
-  	
+  	writeln("Actors needed: ", nrOfActors);
+  	for(var ct in CharacterTypes){
+  		for(var actor=0; actor<nrOfActors; actor++){
+  			for(var c in Characters){
+  				if(CharactersPlayedByActor[c]==actor && c.type==ct){
+  					nrOfActorsOfType[ct]++; 
+  				  	break;
+  				}
+  			}  		
+  		}  	  	
+  	}
   	for(var ct in CharacterTypes) {
   		writeln(ct, " needed: ", nrOfActorsOfType[ct]);
    	}  	  
-   			     	
-  	for(var i=0; i<NrOfActorsNeeded; i++) {
-  	  writeln("Actor ", i, " plays ", CharactersPlayedByActor[i]);
+   	for(var c in Characters){   
+   		ActorToCharacter[CharactersPlayedByActor[c]].add(c);   	
+   	}
+  	for(var i=0; i<nrOfActors; i++) {  	
+  	  	writeln("Actor ", i, " plays ", ActorToCharacter[i]);
     }  	  
 }  
-*/
