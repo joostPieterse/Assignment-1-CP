@@ -11,7 +11,7 @@ tuple Product {
 } 
 
 tuple Demand {
-	key int demandId;
+	key string demandId;
 	int productId;
 	int quantity;
 	int deliveryMin;
@@ -36,7 +36,7 @@ tuple StorageTank {
 	int initialProductId;
 }
 
-tuple StepPrototype{
+tuple Step{
 	key string stepId;
 	int productId;
 	string setupResourceId;
@@ -81,7 +81,7 @@ tuple Criterion {
 {Resource} Resources = ...;
 {string} SetupResources = ...;
 {StorageTank} StorageTanks = ...;
-{StepPrototype} StepPrototypes = ...;
+{Step} Steps = ...;
 {Presedence} Presedences = ...;
 {Alternative} Alternatives = ...;
 {StorageProduction} StorageProductions = ...;
