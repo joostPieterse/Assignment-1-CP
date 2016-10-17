@@ -54,8 +54,8 @@ tuple Alternative {
 	string resourceId;
 	int fixedProcessingTime;
 	float variableProcessingTime;
-	float fixedProccesingCost;
-	float variableProccessingCost;
+	float fixedProcessingCost;
+	float variableProcessingCost;
 }
 
 tuple StorageProduction {
@@ -95,17 +95,19 @@ dvar interval demands[d in Demands]
 	optional(true)
 	in 0..d.deliveryMax;
 	
-dvar interval steps[s in Steps];
+dvar interval steps[s in Steps]
+	optional(true);
 
 dvar interval alternatives[a in Alternatives]
-	in 0..10
-	size a.fixedProcessingTime + ftoi(a.variableProcessingTime);	//TODO: multiply by quantity
+	optional(true)
+	size   ftoi(round(a.fixedProcessingTime + a.variableProcessingTime * 
+	sum(s in Steps:s.stepId==a.stepId) sum(d in Demands:d.productId==s.productId) d.quantity));	//TODO: multiply by quantity
 	
 
-/*dexpr float TotalNonDeliveryCost = sum(d in Demands) presenceOf(demands[d]) * d.quantity * d.nonDeliveryVariableCost;
-dexpr float TotalProcessingCost = sum(d in Demands) presenceOf(d) * 
-(sum(s in Steps:s.productId==d.productId) );
-
+dexpr float TotalNonDeliveryCost = sum(d in Demands) (1-presenceOf(demands[d])) * d.quantity * d.nonDeliveryVariableCost;
+dexpr float TotalProcessingCost = sum(a in Alternatives) presenceOf(alternatives[a]) * (a.fixedProcessingCost + 
+a.variableProcessingCost * sum(s in Steps:s.stepId==a.stepId) sum(d in Demands:d.productId==s.productId) d.quantity);
+/*
 
 dexpr float TotalSetupCost = 0;
 dexpr float TotalTardinessCost = 0;
@@ -117,7 +119,7 @@ dexpr float WeightedTotalTardinessCost = item(CriterionWeights, ord(CriterionWei
 */
 execute{
 	cp.param.Workers = 1;
-	cp.param.TimeLimit = Opl.card(Demands);	
+	//cp.param.TimeLimit = Opl.card(Demands);	
 	/*for(var r in Resources) {
        	for(var s in Setups) {
        		setupCostArray[r][<s.fromState>][<s.toState>] = s.setupCost;
@@ -125,13 +127,25 @@ execute{
 	}*/
 }
 
-minimize 0;
+minimize TotalProcessingCost + TotalNonDeliveryCost;
 
 subject to{
 	forall(d in Demands){
 		span(demands[d], all(s in Steps:s.productId==d.productId) steps[s]);
 	}
+	forall(s in Steps){
+		alternative(steps[s], all(a in Alternatives:a.stepId==s.stepId) alternatives[a]);	
+	}
+	forall(p in Precedences){
+		forall(s1 in Steps:s1.stepId==p.predecessorId){
+			forall(s2 in Steps:s2.stepId==p.successorId){
+				endOf(steps[s1], -1) + p.delayMin <= startOf(steps[s2], maxint);
+				endOf(steps[s1], -1) + p.delayMax >= startOf(steps[s2], maxint);
+			}				
+		}
+	}
 }
+
 tuple DemandAssignment {
   key string demandId; 
   int startTime;    	
@@ -167,9 +181,10 @@ tuple StorageAssignment {
 };
 
 execute {
-  	/*writeln("Total Non-Delivery Cost    : ", TotalNonDeliveryCost);
+	writeln(Alternatives);
+  	writeln("Total Non-Delivery Cost    : ", TotalNonDeliveryCost);
   	writeln("Total Processing Cost      : ", TotalProcessingCost);
-  	writeln("Total Setup Cost           : ", TotalSetupCost);
+  	/*writeln("Total Setup Cost           : ", TotalSetupCost);
   	writeln("Total Tardiness Cost       : ", TotalTardinessCost);
   	writeln();
   	writeln("Weighted Non-Delivery Cost : ",WeightedNonDeliveryCost);
