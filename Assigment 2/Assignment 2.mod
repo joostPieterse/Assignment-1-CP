@@ -1,7 +1,11 @@
 /*********************************************
- * OPL 12.6.3.0 Model
- * Author: Chris
- * Creation Date: 13 okt. 2016 at 12:37:24
+Name: Chris Mens
+Student number:
+Email:
+
+Name: Joost Pieterse
+Student number: 0848231
+Email: j.pieterse@student.tue.nl
  *********************************************/
 using CP;
 
@@ -107,16 +111,16 @@ dvar interval alternatives[a in Alternatives]
 dexpr float TotalNonDeliveryCost = sum(d in Demands) (1-presenceOf(demands[d])) * d.quantity * d.nonDeliveryVariableCost;
 dexpr float TotalProcessingCost = sum(a in Alternatives) presenceOf(alternatives[a]) * (a.fixedProcessingCost + 
 a.variableProcessingCost * sum(s in Steps:s.stepId==a.stepId) sum(d in Demands:d.productId==s.productId) d.quantity);
-/*
+
 
 dexpr float TotalSetupCost = 0;
-dexpr float TotalTardinessCost = 0;
+dexpr float TotalTardinessCost = sum(d in Demands) ((endOf(demands[d]) - d.dueTime)*(d.dueTime<endOf(demands[d])));
 
 dexpr float WeightedTotalNonDeliveryCost = item(CriterionWeights, ord(CriterionWeights, <"NonDeliveryCost">)).weight * TotalNonDeliveryCost;
 dexpr float WeightedTotalProcessingCost = item(CriterionWeights, ord(CriterionWeights, <"ProcessingCost">)).weight * TotalProcessingCost;
 dexpr float WeightedTotalSetupCost = item(CriterionWeights, ord(CriterionWeights, <"SetupCost">)).weight * TotalSetupCost;
 dexpr float WeightedTotalTardinessCost = item(CriterionWeights, ord(CriterionWeights, <"TardinessCost">)).weight * TotalTardinessCost;
-*/
+
 execute{
 	cp.param.Workers = 1;
 	//cp.param.TimeLimit = Opl.card(Demands);	
@@ -127,7 +131,7 @@ execute{
 	}*/
 }
 
-minimize TotalProcessingCost + TotalNonDeliveryCost;
+minimize TotalProcessingCost + TotalNonDeliveryCost + TotalTardinessCost;
 
 subject to{
 	forall(d in Demands){
@@ -181,18 +185,17 @@ tuple StorageAssignment {
 };
 
 execute {
-	writeln(Alternatives);
   	writeln("Total Non-Delivery Cost    : ", TotalNonDeliveryCost);
   	writeln("Total Processing Cost      : ", TotalProcessingCost);
-  	/*writeln("Total Setup Cost           : ", TotalSetupCost);
+  	writeln("Total Setup Cost           : ", TotalSetupCost);
   	writeln("Total Tardiness Cost       : ", TotalTardinessCost);
   	writeln();
-  	writeln("Weighted Non-Delivery Cost : ",WeightedNonDeliveryCost);
-  	writeln("Weighted Processing Cost   : ", WeightedProcessingCost);
-  	writeln("Weighted Setup Cost        : ", WeightedSetupCost);
-  	writeln("Weighted Tardiness Cost    : ", WeightedTardinessCost);
+  	writeln("Weighted Non-Delivery Cost : ",WeightedTotalNonDeliveryCost);
+  	writeln("Weighted Processing Cost   : ", WeightedTotalProcessingCost);
+  	writeln("Weighted Setup Cost        : ", WeightedTotalSetupCost);
+  	writeln("Weighted Tardiness Cost    : ", WeightedTotalTardinessCost);
   	writeln();
-     
+     /*
   	for(var d in demandAssignments) {
  		writeln(d.demandId, ": [", 
  		        d.startTime, ",", d.endTime, "] ");
