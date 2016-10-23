@@ -92,7 +92,8 @@ tuple Criterion {
 {setupMatrix} Setups = ...;
 {Criterion} CriterionWeights = ...;
 
-int setupCostArray[Resources][Products][Products];
+{int} productIds = {p.productId|p in Products};
+int setupCostArray[Resources][productIds][productIds];
 
 
 dvar interval demands[d in Demands]
@@ -124,14 +125,14 @@ dexpr float WeightedTotalTardinessCost = item(CriterionWeights, ord(CriterionWei
 execute{
 	cp.param.Workers = 1;
 	//cp.param.TimeLimit = Opl.card(Demands);	
-	/*for(var r in Resources) {
+	for(var r in Resources) {
        	for(var s in Setups) {
-       		setupCostArray[r][<s.fromState>][<s.toState>] = s.setupCost;
+       		setupCostArray[r][s.fromState][s.toState] = s.setupCost;
    		}				  
-	}*/
+	}
 }
 
-minimize TotalProcessingCost + TotalNonDeliveryCost + TotalTardinessCost;
+minimize WeightedTotalNonDeliveryCost + WeightedTotalNonDeliveryCost + WeightedTotalTardinessCost;
 
 subject to{
 	forall(d in Demands){
