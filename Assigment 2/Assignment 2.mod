@@ -94,7 +94,7 @@ tuple Criterion {
 
 {int} productIds = {p.productId|p in Products};
 int setupCostArray[Resources][productIds][productIds];
-
+int setupTimeArray[Resources][productIds][productIds];
 
 dvar interval demands[d in Demands]
 	optional(true)
@@ -106,9 +106,12 @@ dvar interval steps[s in Steps]
 dvar interval alternatives[a in Alternatives]
 	optional(true)
 	size   ftoi(round(a.fixedProcessingTime + a.variableProcessingTime * 
-	sum(s in Steps:s.stepId==a.stepId) sum(d in Demands:d.productId==s.productId) d.quantity));	//TODO: multiply by quantity
-	
+	sum(s in Steps:s.stepId==a.stepId) sum(d in Demands:d.productId==s.productId) d.quantity));	
 
+dvar sequence resourceUsage[r in Resources] in
+	all(a in Alternatives:a.resourceId == r.resourceId) alternatives[a]
+	types all(a in Alternatives:a.resourceId == r.resourceId) sum(s in Steps:s.stepId == a.stepId) s.productId;
+	
 dexpr float TotalNonDeliveryCost = sum(d in Demands) (1-presenceOf(demands[d])) * d.quantity * d.nonDeliveryVariableCost;
 dexpr float TotalProcessingCost = sum(a in Alternatives) presenceOf(alternatives[a]) * (a.fixedProcessingCost + 
 a.variableProcessingCost * sum(s in Steps:s.stepId==a.stepId) sum(d in Demands:d.productId==s.productId) d.quantity);
@@ -127,7 +130,8 @@ execute{
 	//cp.param.TimeLimit = Opl.card(Demands);	
 	for(var r in Resources) {
        	for(var s in Setups) {
-       		setupCostArray[r][s.fromState][s.toState] = s.setupCost;
+       		if(s.setupMatrixId == r.setupMatrix && r.setupMatrix != "NULL"){       	
+       		}       		
    		}				  
 	}
 }
@@ -148,6 +152,24 @@ subject to{
 				endOf(steps[s1], -1) + p.delayMax >= startOf(steps[s2], maxint);
 			}				
 		}
+	}
+	forall(r in Resources){
+		noOverlap(all(a in Alternatives:a.resourceId==r.resourceId) alternatives[a]);
+		forall(a1 in Alternatives:a1.resourceId==r.resourceId){					
+			forall(a2 in Alternatives:a2.resourceId==r.resourceId && ord(Alternatives, a1) < ord(Alternatives, a2)){
+				if(item(Steps, ord(Steps, <a1.stepId>)).productId != item(Steps, ord(Steps, <a2.stepId>)).productId){
+					endOf(alternatives[a1], -1000) + setupTimeArray[r][item(Steps, ord(Steps, <a1.stepId>)).productId][item(Steps, ord(Steps, <a2.stepId>)).productId] <= startOf(alternatives[a2], 1000) ||	
+					endOf(alternatives[a2], -1000) + setupTimeArray[r][item(Steps, ord(Steps, <a2.stepId>)).productId][item(Steps, ord(Steps, <a1.stepId>)).productId] <= startOf(alternatives[a1], 1000);		
+				}	
+			}		
+		}
+		/*forall(a in Alternatives:a.resourceId==r.resourceId){
+			if(typeOfPrev(resourceUsage[r], alternatives[a], r.initialProductId, -1) != sum(s in Steps:s.stepId == a.stepId) s.productId
+			&& typeOfPrev(resourceUsage[r], alternatives[a], r.initialProductId, -1) != -1){
+				startOf(alternatives[a]) >= endOfPrev(resourceUsage[r], alternatives[a], -1, -1);
+			}
+		}*/
+				
 	}
 }
 
