@@ -80,6 +80,7 @@ tuple Criterion {
 	key string criterionId;
 	float weight;
 }
+
 {Product} Products = ...;
 {Demand} Demands = ...;
 {Resource} Resources = ...;
@@ -92,9 +93,9 @@ tuple Criterion {
 {setupMatrix} Setups = ...;
 {Criterion} CriterionWeights = ...;
 
+
 {int} productIds = {p.productId|p in Products};
-int setupCostArray[Resources][productIds][productIds];
-int setupTimeArray[Resources][productIds][productIds];
+float setupCostArray[Resources][productIds][productIds];
 
 dvar interval demands[d in Demands]
 	optional(true)
@@ -110,20 +111,22 @@ dvar interval alternatives[a in Alternatives]
 
 dvar sequence resourceUsage[r in Resources] in
 	all(a in Alternatives:a.resourceId == r.resourceId) alternatives[a]
-	types all(a in Alternatives:a.resourceId == r.resourceId) sum(s in Steps:s.stepId == a.stepId) s.productId;
+    types all(a in Alternatives:a.resourceId == r.resourceId) item(Steps, <a.stepId>).productId;
 	
 dexpr float TotalNonDeliveryCost = sum(d in Demands) (1-presenceOf(demands[d])) * d.quantity * d.nonDeliveryVariableCost;
 dexpr float TotalProcessingCost = sum(a in Alternatives) presenceOf(alternatives[a]) * (a.fixedProcessingCost + 
 a.variableProcessingCost * sum(s in Steps:s.stepId==a.stepId) sum(d in Demands:d.productId==s.productId) d.quantity);
 
 
-dexpr float TotalSetupCost = 0;
+dexpr float TotalSetupCost = sum(r in Resources:r.setupMatrix != "NULL") sum(a in Alternatives:a.resourceId == r.resourceId) 
+	(typeOfPrev(resourceUsage[r], alternatives[a], r.initialProductId, -1)!=-1)*
+	setupCostArray[r][typeOfPrev(resourceUsage[r], alternatives[a], 0, 0)][item(Steps, <a.stepId>).productId];
 dexpr float TotalTardinessCost = sum(d in Demands) ((endOf(demands[d]) - d.dueTime)*(d.dueTime<endOf(demands[d])));
 
-dexpr float WeightedTotalNonDeliveryCost = item(CriterionWeights, ord(CriterionWeights, <"NonDeliveryCost">)).weight * TotalNonDeliveryCost;
-dexpr float WeightedTotalProcessingCost = item(CriterionWeights, ord(CriterionWeights, <"ProcessingCost">)).weight * TotalProcessingCost;
-dexpr float WeightedTotalSetupCost = item(CriterionWeights, ord(CriterionWeights, <"SetupCost">)).weight * TotalSetupCost;
-dexpr float WeightedTotalTardinessCost = item(CriterionWeights, ord(CriterionWeights, <"TardinessCost">)).weight * TotalTardinessCost;
+dexpr float WeightedTotalNonDeliveryCost = item(CriterionWeights,<"NonDeliveryCost">).weight * TotalNonDeliveryCost;
+dexpr float WeightedTotalProcessingCost = item(CriterionWeights,  <"ProcessingCost">).weight * TotalProcessingCost;
+dexpr float WeightedTotalSetupCost = item(CriterionWeights,  <"SetupCost">).weight * TotalSetupCost;
+dexpr float WeightedTotalTardinessCost = item(CriterionWeights, <"TardinessCost">).weight * TotalTardinessCost;
 
 execute{
 	cp.param.Workers = 1;
@@ -131,10 +134,13 @@ execute{
 	for(var r in Resources) {
        	for(var s in Setups) {
        		if(s.setupMatrixId == r.setupMatrix && r.setupMatrix != "NULL"){       	
+       			setupCostArray[r][s.fromState][s.toState] = s.setupCost;
        		}       		
    		}				  
 	}
 }
+tuple triplet {int loc1; int loc2; int value; };
+{triplet} transitionTimes[r in Resources] = {<s.fromState, s.toState, s.setupTime>|s in Setups:s.setupMatrixId == r.setupMatrix };
 
 minimize WeightedTotalNonDeliveryCost + WeightedTotalNonDeliveryCost + WeightedTotalTardinessCost;
 
@@ -154,20 +160,25 @@ subject to{
 		}
 	}
 	forall(r in Resources){
-		noOverlap(all(a in Alternatives:a.resourceId==r.resourceId) alternatives[a]);
-		forall(a1 in Alternatives:a1.resourceId==r.resourceId){					
+		noOverlap(resourceUsage[r], transitionTimes[r]);
+		/*if(r.initialProductId != -1){
+			forall(a in Alternatives){
+				item(Steps, <a.stepId>).productId != r.initialProductId => 
+					startOf(alternatives[a], 1000) >= item(Setups, <r.setupMatrix, r.initialProductId, item(Steps, <a.stepId>).productId>).setupTime;	
+			}	
+		}	*/	
+		/*forall(a1 in Alternatives:a1.resourceId==r.resourceId){					
 			forall(a2 in Alternatives:a2.resourceId==r.resourceId && ord(Alternatives, a1) < ord(Alternatives, a2)){
 				if(item(Steps, ord(Steps, <a1.stepId>)).productId != item(Steps, ord(Steps, <a2.stepId>)).productId){
-					endOf(alternatives[a1], -1000) + setupTimeArray[r][item(Steps, ord(Steps, <a1.stepId>)).productId][item(Steps, ord(Steps, <a2.stepId>)).productId] <= startOf(alternatives[a2], 1000) ||	
-					endOf(alternatives[a2], -1000) + setupTimeArray[r][item(Steps, ord(Steps, <a2.stepId>)).productId][item(Steps, ord(Steps, <a1.stepId>)).productId] <= startOf(alternatives[a1], 1000);		
+					endOf(alternatives[a1], -1000) + setupTimeArray[r][item(Steps, ord(Steps, <a1.stepId>)).productId]
+					[item(Steps, ord(Steps, <a2.stepId>)).productId] <= startOf(alternatives[a2], 1000) ||	
+					endOf(alternatives[a2], -1000) + setupTimeArray[r][item(Steps, ord(Steps, <a2.stepId>)).productId]
+					[item(Steps, ord(Steps, <a1.stepId>)).productId] <= startOf(alternatives[a1], 1000);		
 				}	
 			}		
-		}
+		}*/
 		/*forall(a in Alternatives:a.resourceId==r.resourceId){
-			if(typeOfPrev(resourceUsage[r], alternatives[a], r.initialProductId, -1) != sum(s in Steps:s.stepId == a.stepId) s.productId
-			&& typeOfPrev(resourceUsage[r], alternatives[a], r.initialProductId, -1) != -1){
-				startOf(alternatives[a]) >= endOfPrev(resourceUsage[r], alternatives[a], -1, -1);
-			}
+			startOf(alternatives[a]) >= endOfPrev(resourceUsage[r], alternatives[a], -1, -1);
 		}*/
 				
 	}
