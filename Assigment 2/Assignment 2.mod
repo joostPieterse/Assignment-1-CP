@@ -163,17 +163,15 @@ subject to{
 		forall(p in Precedences){
 			forall(s1 in Steps:s1.stepId==p.predecessorId && s1.productId == d.productId){
 				forall(s2 in Steps:s2.stepId==p.successorId && s1.productId == d.productId){
+					//Each step should start within the delay period after the previous step								
 					endOf(steps[d][s1], -1) + p.delayMin <= startOf(steps[d][s2], maxint);
 					endOf(steps[d][s1], maxint) + p.delayMax >= startOf(steps[d][s2], -1);
 				}				
 			}
 		}
-		forall(a in Alternatives:d.productId == item(Steps, <a.stepId>).productId){
-			presenceOf(alternatives[d][a]) => startOf(alternatives[d][a]) == startOf(steps[d][item(Steps, <a.stepId>)]) && 
-			endOf(alternatives[d][a]) == endOf(steps[d][item(Steps, <a.stepId>)]);
-		}
+		//size of a demand interval corresponds to the size of all of its steps
 		span(demands[d], all(s in Steps:s.productId==d.productId) steps[d][s]);
-		forall(s in Steps){
+		forall(s in Steps){		
 			alternative(steps[d][s], all(a in Alternatives:a.stepId==s.stepId) alternatives[d][a]);	
 			presenceOf(demands[d])=>presenceOf(steps[d][s]);
 		}
@@ -186,6 +184,7 @@ subject to{
 		forall(r in Resources){
 			forall(d in Demands){
 				forall(a in Alternatives:d.productId == item(Steps, <a.stepId>).productId&&a.resourceId==r.resourceId && r.setupMatrix!="NULL"){
+					//A setup resource usage ends when the setup is done (and the next step starts)
 					(typeOfPrev(resourceUsage[r], alternatives[d][a], r.initialProductId, -1)!=-1 &&
 					presenceOf(alternatives[d][a])) =>
 					(endOf(setupResources[item(Steps, <a.stepId>)][sr]) == startOf(alternatives[d][a]) && 
@@ -198,6 +197,7 @@ subject to{
 	forall(d in Demands){
 		forall(s in Steps:d.productId == s.productId){
 			forall(sp in StorageProductions:sp.prodStepId == s.stepId){		
+				//If there is time between steps, a storage resource is needed
 				endOf(steps[d][s])!=startOf(steps[d][next(Steps, s)])=>
 				(startOf(storageResources[s])==endOf( steps[d][s]) &&
 				endOf(storageResources[s]) == startOf(steps[d][next(Steps, s)]));				
@@ -205,16 +205,13 @@ subject to{
 		}	
 	}
 	forall(st in StorageTanks){
+		//storage cannot exceed maximum quantity
 		storageUsageFunction[st] <= st.quantityMax;	
 		forall(s in Steps, sp in StorageProductions:s.stepId == sp.prodStepId && st.storageTankId == sp.storageTankId){
+			//The state (product id) of a storage resource must remain the same throughout the storage
 			alwaysEqual(state[st], storageResources[s], s.productId, 1, 1);
 		}	
 	}
-	/*forall(s1 in Steps)	{
-		forall(sp in StorageProductions:sp.prodStepId == s1.stepId){
-			noO
-		}		
-	}*/
 }
 
 tuple DemandAssignment {
@@ -261,7 +258,7 @@ execute {
   	writeln("Weighted Processing Cost   : ", WeightedTotalProcessingCost);
   	writeln("Weighted Setup Cost        : ", WeightedTotalSetupCost);
   	writeln("Weighted Tardiness Cost    : ", WeightedTotalTardinessCost);
-  	writeln();
+  	writeln()
      /*
   	for(var d in demandAssignments) {
  		writeln(d.demandId, ": [", 
