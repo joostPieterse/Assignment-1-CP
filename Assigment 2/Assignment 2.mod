@@ -120,7 +120,7 @@ dvar sequence resourceUsage[r in Resources] in
 dvar interval storageResources[s in Steps]
 	optional(true);
 	
-cumulFunction storageUsageFunction[d in Demands][st in StorageTanks] = (sum(s in Steps, sp in StorageProductions:d.productId==s.productId && 
+cumulFunction storageUsageFunction[st in StorageTanks] = (sum(d in Demands, s in Steps, sp in StorageProductions:d.productId==s.productId && 
 sp.prodStepId == s.stepId && sp.storageTankId == st.storageTankId) pulse(storageResources[s], d.quantity));
 
 
@@ -156,7 +156,7 @@ tuple triplet {int loc1; int loc2; int value; };
 {triplet} storageTransitions[st in StorageTanks] = {<s.fromState, s.toState, s.setupTime>|s in Setups:s.setupMatrixId == st.setupMatrixId };
 stateFunction state[st in StorageTanks] with storageTransitions[st];
 
-minimize WeightedTotalNonDeliveryCost + WeightedTotalNonDeliveryCost + WeightedTotalTardinessCost;
+minimize WeightedTotalNonDeliveryCost + WeightedTotalTardinessCost + WeightedTotalProcessingCost + WeightedTotalSetupCost;
 
 subject to{
 	forall(d in Demands){
@@ -164,7 +164,7 @@ subject to{
 			forall(s1 in Steps:s1.stepId==p.predecessorId && s1.productId == d.productId){
 				forall(s2 in Steps:s2.stepId==p.successorId && s1.productId == d.productId){
 					endOf(steps[d][s1], -1) + p.delayMin <= startOf(steps[d][s2], maxint);
-					endOf(steps[d][s1], -1) + p.delayMax >= startOf(steps[d][s2], maxint);
+					endOf(steps[d][s1], maxint) + p.delayMax >= startOf(steps[d][s2], -1);
 				}				
 			}
 		}
@@ -205,7 +205,7 @@ subject to{
 		}	
 	}
 	forall(st in StorageTanks){
-		sum(d in Demands) storageUsageFunction[d][st]<=st.quantityMax;	
+		storageUsageFunction[st] <= st.quantityMax;	
 		forall(s in Steps, sp in StorageProductions:s.stepId == sp.prodStepId && st.storageTankId == sp.storageTankId){
 			alwaysEqual(state[st], storageResources[s], s.productId, 1, 1);
 		}	
