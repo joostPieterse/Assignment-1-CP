@@ -123,6 +123,7 @@ dvar interval storageResources[s in Steps]
 cumulFunction storageUsageFunction[d in Demands][st in StorageTanks] = (sum(s in Steps, sp in StorageProductions:d.productId==s.productId && 
 sp.prodStepId == s.stepId && sp.storageTankId == st.storageTankId) pulse(storageResources[s], d.quantity));
 
+
 dexpr float TotalNonDeliveryCost = sum(d in Demands) (1-presenceOf(demands[d])) * d.quantity * d.nonDeliveryVariableCost;
 dexpr float TotalProcessingCost = sum (d in Demands) sum(a in Alternatives) presenceOf(alternatives[d][a]) * (a.fixedProcessingCost + 
 a.variableProcessingCost * d.quantity);
@@ -152,6 +153,8 @@ execute{
 }
 tuple triplet {int loc1; int loc2; int value; };
 {triplet} transitionTimes[r in Resources] = {<s.fromState, s.toState, s.setupTime>|s in Setups:s.setupMatrixId == r.setupMatrix };
+{triplet} storageTransitions[st in StorageTanks] = {<s.fromState, s.toState, s.setupTime>|s in Setups:s.setupMatrixId == st.setupMatrixId };
+stateFunction state[st in StorageTanks] with storageTransitions[st];
 
 minimize WeightedTotalNonDeliveryCost + WeightedTotalNonDeliveryCost + WeightedTotalTardinessCost;
 
@@ -203,6 +206,9 @@ subject to{
 	}
 	forall(st in StorageTanks){
 		sum(d in Demands) storageUsageFunction[d][st]<=st.quantityMax;	
+		forall(s in Steps, sp in StorageProductions:s.stepId == sp.prodStepId && st.storageTankId == sp.storageTankId){
+			alwaysEqual(state[st], storageResources[s], s.productId, 1, 1);
+		}	
 	}
 	/*forall(s1 in Steps)	{
 		forall(sp in StorageProductions:sp.prodStepId == s1.stepId){
