@@ -1,7 +1,7 @@
 /*********************************************
 Name: Chris Mens
-Student number:
-Email:
+Student number: 0770090
+Email: c.m.mens@student.tue.nl
 
 Name: Joost Pieterse
 Student number: 0848231
@@ -109,7 +109,7 @@ dvar interval alternatives[d in Demands][a in Alternatives]
 	optional(true)
 	size   ftoi(round(a.fixedProcessingTime + a.variableProcessingTime * d.quantity));	
 	
-dvar interval setupResources[s in Steps][sr in SetupResources]
+dvar interval setupResources[d in Demands][s in Steps]
 	optional(true);
 	
 
@@ -117,11 +117,11 @@ dvar sequence resourceUsage[r in Resources] in
 	all(a in Alternatives, d in Demands:a.resourceId == r.resourceId && d.productId == item(Steps, <a.stepId>).productId) alternatives[d][a]
     types all(a in Alternatives, d in Demands:a.resourceId == r.resourceId && d.productId == item(Steps, <a.stepId>).productId) d.productId;
 
-dvar interval storageResources[s in Steps]
+dvar interval storageResources[d in Demands][s in Steps]
 	optional(true);
 	
 cumulFunction storageUsageFunction[st in StorageTanks] = (sum(d in Demands, s in Steps, sp in StorageProductions:d.productId==s.productId && 
-sp.prodStepId == s.stepId && sp.storageTankId == st.storageTankId) pulse(storageResources[s], d.quantity));
+sp.prodStepId == s.stepId && sp.storageTankId == st.storageTankId) pulse(storageResources[d][s], d.quantity));
 
 
 dexpr float TotalNonDeliveryCost = sum(d in Demands) (1-presenceOf(demands[d])) * d.quantity * d.nonDeliveryVariableCost;
@@ -129,7 +129,8 @@ dexpr float TotalProcessingCost = sum (d in Demands) sum(a in Alternatives) pres
 a.variableProcessingCost * d.quantity);
 
 
-dexpr float TotalSetupCost = sum(r in Resources:r.setupMatrix != "NULL") sum (d in Demands) sum(a in Alternatives:a.resourceId == r.resourceId) 
+dexpr float TotalSetupCost = sum(r in Resources:r.setupMatrix != "NULL") sum (d in Demands) 
+	sum(a in Alternatives:a.resourceId == r.resourceId && item(Steps, <a.stepId>).productId ==d.productId) 
 	(typeOfPrev(resourceUsage[r], alternatives[d][a], r.initialProductId, -1)!=-1)*
 	setupCostArray[r][typeOfPrev(resourceUsage[r], alternatives[d][a], (r.initialProductId>=0) * r.initialProductId, 0)][item(Steps, <a.stepId>).productId];
 dexpr float TotalTardinessCost = sum(d in Demands) ((endOf(demands[d]) - d.dueTime)*(d.dueTime<endOf(demands[d])))*d.tardinessVariableCost;
@@ -171,45 +172,56 @@ subject to{
 		}
 		//size of a demand interval corresponds to the size of all of its steps
 		span(demands[d], all(s in Steps:s.productId==d.productId) steps[d][s]);
-		forall(s in Steps){		
+		forall(s in Steps:s.productId == d.productId){		
+			//one alternative needs to be present if a step is present
 			alternative(steps[d][s], all(a in Alternatives:a.stepId==s.stepId) alternatives[d][a]);	
-			presenceOf(demands[d])=>presenceOf(steps[d][s]);
-		}
-	}
-	forall(r in Resources){
-		noOverlap(resourceUsage[r], transitionTimes[r]);
-	}
-	forall(sr in SetupResources){
-		noOverlap(all(s in Steps:s.setupResourceId==sr) setupResources[s][sr]);	
+			presenceOf(demands[d])=>presenceOf(steps[d][s]);			
+		}		
+		//alternatives and steps that belong to another product than the specified demand cannot be present
+		forall(s in Steps:s.productId != d.productId){	
+			presenceOf(steps[d][s]) == 0;
+			presenceOf(storageResources[d][s]) == 0;
+			presenceOf(setupResources[d][s]) == 0;
+			forall(a in Alternatives:a.stepId == s.stepId){
+				presenceOf(alternatives[d][a]) == 0;			
+			}
+		}		
 		forall(r in Resources){
-			forall(d in Demands){
-				forall(a in Alternatives:d.productId == item(Steps, <a.stepId>).productId&&a.resourceId==r.resourceId && r.setupMatrix!="NULL"){
-					//A setup resource usage ends when the setup is done (and the next step starts)
-					(typeOfPrev(resourceUsage[r], alternatives[d][a], r.initialProductId, -1)!=-1 &&
-					presenceOf(alternatives[d][a])) =>
-					(endOf(setupResources[item(Steps, <a.stepId>)][sr]) == startOf(alternatives[d][a]) && 
-					sizeOf(setupResources[item(Steps, <a.stepId>)][sr]) == 
-					setupTimeArray[r][typeOfPrev(resourceUsage[r], alternatives[d][a], r.initialProductId)][d.productId]);			
-				}
-  			}
-   		}  							
-	}
-	forall(d in Demands){
+			forall(a in Alternatives:d.productId == item(Steps, <a.stepId>).productId&&a.resourceId==r.resourceId && r.setupMatrix!="NULL"){
+				//A setup resource usage ends when the setup is done (and the next step starts)
+				//If both the time and the cost are 0, the setup resource is not needed
+				(typeOfPrev(resourceUsage[r], alternatives[d][a], r.initialProductId, -1)!=-1 &&
+				presenceOf(alternatives[d][a]) &&
+				!(setupTimeArray[r][typeOfPrev(resourceUsage[r], alternatives[d][a], r.initialProductId)][d.productId]==0 &&
+				setupCostArray[r][typeOfPrev(resourceUsage[r], alternatives[d][a], r.initialProductId)][d.productId]==0)) =>
+				(endOf(setupResources[d][item(Steps, <a.stepId>)]) == startOf(alternatives[d][a]) && 
+				sizeOf(setupResources[d][item(Steps, <a.stepId>)]) == 
+				setupTimeArray[r][typeOfPrev(resourceUsage[r], alternatives[d][a], r.initialProductId)][d.productId]);			
+			}	
+		}	
 		forall(s in Steps:d.productId == s.productId){
 			forall(sp in StorageProductions:sp.prodStepId == s.stepId){		
 				//If there is time between steps, a storage resource is needed
 				endOf(steps[d][s])!=startOf(steps[d][next(Steps, s)])=>
-				(startOf(storageResources[s])==endOf( steps[d][s]) &&
-				endOf(storageResources[s]) == startOf(steps[d][next(Steps, s)]));				
+				(startOf(storageResources[d][s])==endOf( steps[d][s]) &&
+				endOf(storageResources[d][s]) == startOf(steps[d][next(Steps, s)]));				
  			}				
-		}	
+		}		
 	}
+	forall(r in Resources){
+		//Resource usage cannot overlap, taking transition times into account
+		noOverlap(resourceUsage[r], transitionTimes[r]);
+	}
+	forall(sr in SetupResources){
+		//setup resource usage cannot overlap
+		noOverlap(all(s in Steps, d in Demands:s.setupResourceId==sr && d.productId==s.productId) setupResources[d][s]);									
+	}		 
 	forall(st in StorageTanks){
 		//storage cannot exceed maximum quantity
 		storageUsageFunction[st] <= st.quantityMax;	
-		forall(s in Steps, sp in StorageProductions:s.stepId == sp.prodStepId && st.storageTankId == sp.storageTankId){
+		forall(s in Steps, sp in StorageProductions, d in Demands:d.productId == s.productId&&s.stepId == sp.prodStepId && st.storageTankId == sp.storageTankId){
 			//The state (product id) of a storage resource must remain the same throughout the storage
-			alwaysEqual(state[st], storageResources[s], s.productId, 1, 1);
+			alwaysEqual(state[st], storageResources[d][s], s.productId, 1, 1);
 		}	
 	}
 }
