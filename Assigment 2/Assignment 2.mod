@@ -116,7 +116,13 @@ dvar interval setupResources[s in Steps][sr in SetupResources]
 dvar sequence resourceUsage[r in Resources] in
 	all(a in Alternatives, d in Demands:a.resourceId == r.resourceId && d.productId == item(Steps, <a.stepId>).productId) alternatives[d][a]
     types all(a in Alternatives, d in Demands:a.resourceId == r.resourceId && d.productId == item(Steps, <a.stepId>).productId) d.productId;
+
+dvar interval storageResources[s in Steps]
+	optional(true);
 	
+cumulFunction storageUsageFunction[d in Demands][st in StorageTanks] = (sum(s in Steps, sp in StorageProductions:d.productId==s.productId && 
+sp.prodStepId == s.stepId && sp.storageTankId == st.storageTankId) pulse(storageResources[s], d.quantity));
+
 dexpr float TotalNonDeliveryCost = sum(d in Demands) (1-presenceOf(demands[d])) * d.quantity * d.nonDeliveryVariableCost;
 dexpr float TotalProcessingCost = sum (d in Demands) sum(a in Alternatives) presenceOf(alternatives[d][a]) * (a.fixedProcessingCost + 
 a.variableProcessingCost * d.quantity);
@@ -186,6 +192,23 @@ subject to{
   			}
    		}  							
 	}
+	forall(d in Demands){
+		forall(s in Steps:d.productId == s.productId){
+			forall(sp in StorageProductions:sp.prodStepId == s.stepId){		
+				endOf(steps[d][s])!=startOf(steps[d][next(Steps, s)])=>
+				(startOf(storageResources[s])==endOf( steps[d][s]) &&
+				endOf(storageResources[s]) == startOf(steps[d][next(Steps, s)]));				
+ 			}				
+		}	
+	}
+	forall(st in StorageTanks){
+		sum(d in Demands) storageUsageFunction[d][st]<=st.quantityMax;	
+	}
+	/*forall(s1 in Steps)	{
+		forall(sp in StorageProductions:sp.prodStepId == s1.stepId){
+			noO
+		}		
+	}*/
 }
 
 tuple DemandAssignment {
