@@ -107,6 +107,10 @@ dvar interval steps[d in Demands][s in Steps]
 dvar interval alternatives[d in Demands][a in Alternatives]
 	optional(true)
 	size   ftoi(round(a.fixedProcessingTime + a.variableProcessingTime * d.quantity));	
+	
+dvar interval setupResources[s in Steps][sr in SetupResources]
+	optional(true);
+	
 
 dvar sequence resourceUsage[r in Resources] in
 	all(a in Alternatives, d in Demands:a.resourceId == r.resourceId && d.productId == item(Steps, <a.stepId>).productId) alternatives[d][a]
@@ -165,6 +169,23 @@ subject to{
 	}
 	forall(r in Resources){
 		noOverlap(resourceUsage[r], transitionTimes[r]);
+		
+			
+	}
+	forall(sr in SetupResources){
+		noOverlap(all(s in Steps:s.setupResourceId==sr) setupResources[s][sr]);	
+		forall(r in Resources){
+			forall(d in Demands){
+				forall(a in Alternatives:d.productId == item(Steps, <a.stepId>).productId&&a.resourceId==r.resourceId && r.setupMatrix!="NULL"){
+					(typeOfPrev(resourceUsage[r], alternatives[d][a], r.initialProductId, -1)!=d.productId &&
+					typeOfPrev(resourceUsage[r], alternatives[d][a], r.initialProductId, -1)!=-1 &&
+					presenceOf(alternatives[d][a])) =>
+					(endOf(setupResources[item(Steps, <a.stepId>)][sr]) == startOf(alternatives[d][a]) && 
+					startOf(setupResources[item(Steps, <a.stepId>)][sr]) == endOf(setupResources[item(Steps, <a.stepId>)][sr]) - 
+					item(Setups, <r.setupMatrix, typeOfPrev(resourceUsage[r], alternatives[d][a], 0), d.productId>).setupTime);			
+				}
+  			}
+   		}  							
 	}
 }
 
