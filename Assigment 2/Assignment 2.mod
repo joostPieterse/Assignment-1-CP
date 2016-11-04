@@ -117,13 +117,11 @@ dvar sequence resourceUsage[r in Resources] in
 	all(a in Alternatives, d in Demands:a.resourceId == r.resourceId && d.productId == item(Steps, <a.stepId>).productId) alternatives[d][a]
     types all(a in Alternatives, d in Demands:a.resourceId == r.resourceId && d.productId == item(Steps, <a.stepId>).productId) d.productId;
 
-dvar interval storageResources[d in Demands][s in Steps]
-	optional(true);
-dvar interval storageResourcesAlternatives[d in Demands][s in Steps][st in StorageTanks]
+dvar interval storageResources[d in Demands][s in Steps][st in StorageTanks]
 	optional(true);
 	
 cumulFunction storageUsageFunction[st in StorageTanks] = (sum(d in Demands, s in Steps, sp in StorageProductions:d.productId==s.productId && 
-sp.prodStepId == s.stepId && sp.storageTankId == st.storageTankId) pulse(storageResourcesAlternatives[d][s][st], d.quantity));
+sp.prodStepId == s.stepId && sp.storageTankId == st.storageTankId) pulse(storageResources[d][s][st], d.quantity));
 
 
 dexpr float TotalNonDeliveryCost = sum(d in Demands) (1-presenceOf(demands[d])) * d.quantity * d.nonDeliveryVariableCost;
@@ -180,13 +178,15 @@ subject to{
 		}		
 		forall(r in Resources){
 			forall(a in Alternatives:d.productId == item(Steps, <a.stepId>).productId&&a.resourceId==r.resourceId && r.setupMatrix!="NULL"){
-				//A setup resource usage ends when the setup is done (and the next step starts)
+				//A setup resource usage ends when the setup is done (and the next step starts), and starts after the previous resource usage
+				//is done
 				//If both the time and the cost are 0, the setup resource is not needed
 				(typeOfPrev(resourceUsage[r], alternatives[d][a], r.initialProductId, -1)!=-1 &&
 				presenceOf(alternatives[d][a]) &&
 				!(setupTimeArray[r][typeOfPrev(resourceUsage[r], alternatives[d][a], r.initialProductId)][d.productId]==0 &&
 				setupCostArray[r][typeOfPrev(resourceUsage[r], alternatives[d][a], r.initialProductId)][d.productId]==0)) =>
 				(endOf(setupResources[d][item(Steps, <a.stepId>)]) == startOf(alternatives[d][a]) && 
+				startOf(setupResources[d][item(Steps, <a.stepId>)]) >= endOfPrev(resourceUsage[r],alternatives[d][a], -1) &&
 				sizeOf(setupResources[d][item(Steps, <a.stepId>)]) == 
 				setupTimeArray[r][typeOfPrev(resourceUsage[r], alternatives[d][a], r.initialProductId)][d.productId]);			
 			}	
@@ -194,11 +194,12 @@ subject to{
 		forall(s in Steps:d.productId == s.productId){
 			forall(sp in StorageProductions:sp.prodStepId == s.stepId){		
 				//If there is time between steps, a storage resource is needed
-				endOf(steps[d][s])!=startOf(steps[d][next(Steps, s)])=>
-				(startOf(storageResources[d][s]) ==endOf(steps[d][s]) &&
-				endOf(storageResources[d][s]) == startOf(steps[d][next(Steps, s)]));
-				alternative(storageResources[d][s], all(st in StorageTanks:sp.storageTankId == st.storageTankId) storageResourcesAlternatives[d][s][st]);				
- 			}				
+				(endOf(steps[d][s])!=startOf(steps[d][next(Steps, s)]) && presenceOf(storageResources[d][s][item(StorageTanks, <sp.storageTankId>)]))=>
+				(startOf(storageResources[d][s][item(StorageTanks, <sp.storageTankId>)]) ==endOf(steps[d][s]) &&
+				endOf(storageResources[d][s][item(StorageTanks, <sp.storageTankId>)]) == startOf(steps[d][next(Steps, s)]));
+			}
+			(sum(st in StorageTanks) presenceOf(storageResources[d][s][st])==1);
+								
 		}		
 	}
 	forall(r in Resources){
@@ -214,25 +215,25 @@ subject to{
 		storageUsageFunction[st] <= st.quantityMax;	
 		forall(s in Steps, sp in StorageProductions, d in Demands:d.productId == s.productId&&s.stepId == sp.prodStepId && st.storageTankId == sp.storageTankId){
 			//The state (product id) of a storage resource must remain the same throughout the storage of a product
-			alwaysEqual(state[st], storageResources[d][s], s.productId, 1, 1);
+			alwaysEqual(state[st], storageResources[d][s][st], s.productId, 1, 1);
 		}	
 	}
 }
 
 tuple DemandAssignment {
-  key string demandId; 
-  int startTime;    	
+  key string demandId;
+  int startTime;       
   int endTime;
   float nonDeliveryCost;
   float tardinessCost;
 };
-
-//{DemandAssignment} demandAssignments = 0;
-
+ 
+{DemandAssignment} demandAssignments = {};
+ 
 tuple StepAssignment {
-  key string demandId; 
-  key string stepId;  	
-  int startTime;    	
+  key string demandId;
+  key string stepId;   
+  int startTime;       
   int endTime;
   string resourceId;
   float procCost;
@@ -241,62 +242,113 @@ tuple StepAssignment {
   int endTimeSetup;
   string setupResourceId;
 };
-
-//{StepAssignment} stepAssignments = 0;
-
+ 
+{StepAssignment} stepAssignments = {};
+ 
 tuple StorageAssignment {
-  key string demandId; 
-  key string prodStepId;  	
-  int startTime;    	
+  key string demandId;
+  key string prodStepId;   
+  int startTime;       
   int endTime;
   int quantity;
   string storageTankId;
 };
-
+ 
+{StorageAssignment} storageAssignments = {};
+ 
+ 
+ 
 execute {
-  	writeln("Total Non-Delivery Cost    : ", TotalNonDeliveryCost);
-  	writeln("Total Processing Cost      : ", TotalProcessingCost);
-  	writeln("Total Setup Cost           : ", TotalSetupCost);
-  	writeln("Total Tardiness Cost       : ", TotalTardinessCost);
-  	writeln();
-  	writeln("Weighted Non-Delivery Cost : ",WeightedTotalNonDeliveryCost);
-  	writeln("Weighted Processing Cost   : ", WeightedTotalProcessingCost);
-  	writeln("Weighted Setup Cost        : ", WeightedTotalSetupCost);
-  	writeln("Weighted Tardiness Cost    : ", WeightedTotalTardinessCost);
-  	writeln()
-     /*
-  	for(var d in demandAssignments) {
- 		writeln(d.demandId, ": [", 
- 		        d.startTime, ",", d.endTime, "] ");
- 		writeln("   non-delivery cost: ", d.nonDeliveryCost, 
- 		        ", tardiness cost: " , d.tardinessCost);
-  	} 
-  	writeln();
-
- 	for(var sa in stepAssignments) {
- 		writeln(sa.stepId, " of ", sa.demandId, 
- 		        ": [", sa.startTime, ",", sa.endTime, "] ", 
- 		        "on ", sa.resourceId);
- 		write("   processing cost: ", sa.procCost);
- 		if (sa.setupCost > 0)
- 		  write(", setup cost: ", sa.setupCost);
- 		writeln();
- 		if (sa.startTimeSetup < sa.endTimeSetup)
- 			writeln("   setup step: [", 
- 			        sa.startTimeSetup, ",", sa.endTimeSetup, "] ",
- 			        "on ", sa.setupResourceId);   
-  	}
-  	writeln();
-  
-  	for(var sta in storageAssignments) {
+    for(var d in Demands){
+        var demandId = d.demandId;
+        var start = demands[d].start;
+        var end = demands[d].end;
+        var nonDeliveryCost = !demands[d].present * d.quantity * d.nonDeliveryVariableCost;
+        var tardinessCost = (demands[d].end - d.dueTime)*(d.dueTime < demands[d].end)*d.tardinessVariableCost;
+ 
+        demandAssignments.add(demandId, start, end, nonDeliveryCost, tardinessCost);
+       
+        for(var s in Steps){
+            var stepId = s.stepId;
+            var start = steps[d][s].start;
+            var end = steps[d][s].end;
+            var alternativeId = alternatives[d]
+           
+            for(var a in Alternatives){
+                if(alternatives[d][a].present && s.stepId == a.stepId){
+                    var resourceId =a.resourceId;
+                    var procCost = a.fixedProcessingCost + a.variableProcessingCost * d.quantity;
+                }              
+            }
+           
+            var setupResourceId = s.setupResourceId;
+            var startTimeSetup = setupResources[d][s].start;
+            var endTimeSetup = setupResources[d][s].end;
+            var setupCost = setupCostPerStep[d][s];
+           
+            stepAssignments.add(demandId, stepId, start, end, resourceId, procCost, setupCost, startTimeSetup, endTimeSetup, setupResourceId);
+           
+           	var storageTankId = "";  
+           	var storageStartTime=0;
+           	 var storageEndTime=0;
+           for(st in StorageTanks){
+           	if(storageResources[d][s][st].present && d.productId == s.productId){
+           	storageTankId = st.storageTankId;       
+             storageStartTime  = storageResources[d][s][st].start;
+            storageEndTime  = storageResources[d][s][st].end;    	
+           	}           
+           }
+            var quantity  = d.quantity;
+           
+            storageAssignments.add(demandId, stepId, storageStartTime, storageEndTime, quantity, storageTankId);
+        }  
+    }  
+   
+   
+   
+ 
+    writeln("Total Non-Delivery Cost    : ", TotalNonDeliveryCost);
+    writeln("Total Processing Cost      : ", TotalProcessingCost);
+    writeln("Total Setup Cost           : ", TotalSetupCost);
+    writeln("Total Tardiness Cost       : ", TotalTardinessCost);
+    writeln();
+    writeln("Weighted Non-Delivery Cost : ",WeightedTotalNonDeliveryCost);
+    writeln("Weighted Processing Cost   : ", WeightedTotalProcessingCost);
+    writeln("Weighted Setup Cost        : ", WeightedTotalSetupCost);
+    writeln("Weighted Tardiness Cost    : ", WeightedTotalTardinessCost);
+    writeln();
+     
+    for(var d in demandAssignments) {
+        writeln(d.demandId, ": [",
+                d.startTime, ",", d.endTime, "] ");
+        writeln("   non-delivery cost: ", d.nonDeliveryCost,
+                ", tardiness cost: " , d.tardinessCost);
+    }
+   
+    writeln();
+   
+    for(var sa in stepAssignments) {
+        writeln(sa.stepId, " of ", sa.demandId,
+                ": [", sa.startTime, ",", sa.endTime, "] ",
+                "on ", sa.resourceId);
+        write("   processing cost: ", sa.procCost);
+        if (sa.setupCost > 0)
+          write(", setup cost: ", sa.setupCost);
+        writeln();
+        if (sa.startTimeSetup < sa.endTimeSetup)
+            writeln("   setup step: [",
+                    sa.startTimeSetup, ",", sa.endTimeSetup, "] ",
+                    "on ", sa.setupResourceId);  
+    }
+    writeln();
+ 
+    for(var sta in storageAssignments) {
       if (sta.startTime < sta.endTime) {
-        writeln(sta.prodStepId, " of ", sta.demandId, 
+        writeln(sta.prodStepId, " of ", sta.demandId,
           " produces quantity ", sta.quantity,
             " in storage tank ", sta.storageTankId,
-            " at time ", sta.startTime, 
-          " which is consumed at time ", sta.endTime);	
-      }		
-  	}	*/   
-} 
-
-
+            " at time ", sta.startTime,
+          " which is consumed at time ", sta.endTime); 
+      }      
+    }
+}
