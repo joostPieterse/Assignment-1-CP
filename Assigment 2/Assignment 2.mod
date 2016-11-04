@@ -128,16 +128,14 @@ dvar sequence resourceUsage[r in Resources] in
 	all(a in Alternatives, d in Demands:a.resourceId == r.resourceId && d.productId == item(Steps, <a.stepId>).productId) alternatives[<d,a>]
     types all(a in Alternatives, d in Demands:a.resourceId == r.resourceId && d.productId == item(Steps, <a.stepId>).productId) d.productId;
 
-dvar interval storageResources[<d,s> in DemSteps]
-	optional(true);
-dvar interval storageResourcesAlternatives[<d,s> in DemSteps][st in StorageTanks]
+dvar interval storageResources[d in Demands][s in Steps][st in StorageTanks]
 	optional(true);
 	
 cumulFunction storageUsageFunction[st in StorageTanks] = (sum(d in Demands, s in Steps, sp in StorageProductions:d.productId==s.productId && 
-	sp.prodStepId == s.stepId && sp.storageTankId == st.storageTankId) pulse(storageResourcesAlternatives[<d,s>][st], d.quantity));
+	sp.prodStepId == s.stepId && sp.storageTankId == st.storageTankId) pulse(storageResources[d][s][st], d.quantity));
 
-
-dexpr float TotalNonDeliveryCost = sum(d in Demands) (1-presenceOf(demands[d])) * d.quantity * d.nonDeliveryVariableCost;
+dexpr float NonDeliveryPerDemand[d in Demands] = (1-presenceOf(demands[d])) * d.quantity * d.nonDeliveryVariableCost;
+dexpr float TotalNonDeliveryCost = sum(d in Demands) NonDeliveryPerDemand[d];
 
 dexpr float processingCostPerStep[d in Demands][s in Steps] = sum(a in Alternatives:a.stepId == s.stepId)
 	presenceOf(alternatives[<d,a>]) * (a.fixedProcessingCost + a.variableProcessingCost * d.quantity);
@@ -149,7 +147,8 @@ dexpr float setupCostPerStep[d in Demands][s in Steps] =  sum(r in Resources:r.s
 	setupCostArray[r][typeOfPrev(resourceUsage[r], alternatives[<d,a>], (r.initialProductId>=0) * r.initialProductId, 0)][item(Steps, <a.stepId>).productId];
 dexpr float TotalSetupCost = sum(d in Demands, s in Steps:d.productId == s.productId) setupCostPerStep[d][s];
 
-dexpr float TotalTardinessCost = sum(d in Demands) ((endOf(demands[d]) - d.dueTime)*(d.dueTime<endOf(demands[d])))*d.tardinessVariableCost;
+dexpr float TardinessPerDemand[d in Demands] =  ((endOf(demands[d]) - d.dueTime)*(d.dueTime<endOf(demands[d])))*d.tardinessVariableCost;
+dexpr float TotalTardinessCost = sum(d in Demands)TardinessPerDemand[d];
 
 dexpr float WeightedTotalNonDeliveryCost = item(CriterionWeights,<"NonDeliveryCost">).weight * TotalNonDeliveryCost;
 dexpr float WeightedTotalProcessingCost = item(CriterionWeights,  <"ProcessingCost">).weight * TotalProcessingCost;
@@ -181,7 +180,6 @@ subject to{
 	WeightedTotalTardinessCost >= 0;
 	WeightedTotalProcessingCost >= 0;
 	WeightedTotalSetupCost >= 0;
-	
 /*WeightedTotalNonDeliveryCost + WeightedTotalTardinessCost + WeightedTotalProcessingCost + WeightedTotalSetupCost >=
 sum(d in Demands) minl(d.nonDeliveryVariableCost*d.quantity, )*/
 
@@ -211,14 +209,12 @@ sum(d in Demands) minl(d.nonDeliveryVariableCost*d.quantity, )*/
 					setupTimeArray[r][typeOfPrev(resourceUsage[r], alternatives[<d,a>], r.initialProductId)][d.productId]);			
 			}	
 		}	
-		forall(s in Steps:d.productId == s.productId && last(Steps)!=s){
-			forall(sp in StorageProductions:sp.prodStepId == s.stepId){		
+		forall(sp in StorageProductions, s in Steps:item(Steps, <sp.prodStepId>).productId==d.productId && s.stepId == sp.prodStepId){
 				//If there is time between steps, a storage resource is needed
-				endOf(steps[<d,s>]) < startOf(steps[<d,next(Steps, s)>])=>
-					(startOf(storageResources[<d,s>]) == endOf(steps[<d,s>]) &&
-					endOf(storageResources[<d,s>]) == startOf(steps[<d,next(Steps, s)>]));
-				alternative(storageResources[<d,s>], all(st in StorageTanks:sp.storageTankId == st.storageTankId) storageResourcesAlternatives[<d,s>][st]);				
- 			}				
+				endOf(steps[<d,s>]) < startOf(steps[<d,item(Steps, <sp.consStepId>)>])=>
+					((sum(st in StorageTanks) (startOf(storageResources[d][s][st]) == endOf(steps[<d,s>]) &&
+					endOf(storageResources[d][s][st]) == startOf(steps[<d,item(Steps, <sp.consStepId>)>]))==1)&&
+					(sum(st in StorageTanks)presenceOf(storageResources[d][s][st])==1));					
 		}		
 	}
 	forall(r in Resources){
@@ -234,7 +230,7 @@ sum(d in Demands) minl(d.nonDeliveryVariableCost*d.quantity, )*/
 		storageUsageFunction[st] <= st.quantityMax;	
 		forall(s in Steps, sp in StorageProductions, d in Demands:d.productId == s.productId&&s.stepId == sp.prodStepId && st.storageTankId == sp.storageTankId){
 			//The state (product id) of a storage resource must remain the same throughout the storage of a product
-			alwaysEqual(state[st], storageResourcesAlternatives[<d,s>][st], s.productId, 0, 0);
+			alwaysEqual(state[st], storageResources[d][s][item(StorageTanks, <sp.storageTankId>)], s.productId, 0, 0);
 		}	
 	}
 }
@@ -247,7 +243,7 @@ tuple DemandAssignment {
   float tardinessCost;
 };
  
-{DemandAssignment} demandAssignments = {};
+{DemandAssignment} demandAssignments = {<d.demandId, startOf(demands[d]), endOf(demands[d]), NonDeliveryPerDemand[d], TardinessPerDemand[d]>|d in Demands};
  
 tuple StepAssignment {
   key string demandId;
@@ -262,7 +258,9 @@ tuple StepAssignment {
   string setupResourceId;
 };
  
-{StepAssignment} stepAssignments = {};
+{StepAssignment} stepAssignments = {<d.demandId, s.stepId, startOf(steps[<d,s>]), endOf(steps[<d,s>])
+	, a.resourceId, processingCostPerStep[d][s], setupCostPerStep[d][s], startOf(setupResources[<d,s>]), endOf(setupResources[<d,s>])
+	,s.setupResourceId>|s in Steps, d in Demands, a in Alternatives:d.productId==s.productId && s.stepId==a.stepId && presenceOf(alternatives[<d,a>])};
  
 tuple StorageAssignment {
   key string demandId;
@@ -273,59 +271,12 @@ tuple StorageAssignment {
   string storageTankId;
 };
  
-{StorageAssignment} storageAssignments = {};
+{StorageAssignment} storageAssignments = {<d.demandId, sp.prodStepId, startOf(storageResources[d][s][st]), endOf(storageResources[d][s][st])
+	, d.quantity, st.storageTankId>|d in Demands, s in Steps, st in StorageTanks, sp in StorageProductions:
+	d.productId==s.productId && sp.prodStepId == s.stepId && presenceOf(storageResources[d][s][st])};
  
  
- /*
 execute {
-    for(var d in Demands){
-        var demandId = d.demandId;
-        var start = demands[d].start;
-        var end = demands[d].end;
-        var nonDeliveryCost = !demands[d].present * d.quantity * d.nonDeliveryVariableCost;
-        var tardinessCost = (demands[d].end - d.dueTime)*(d.dueTime < demands[d].end)*d.tardinessVariableCost;
- 
-        demandAssignments.add(demandId, start, end, nonDeliveryCost, tardinessCost);
-       
-        for(var s in Steps){
-            var stepId = s.stepId;
-            var start = steps[<d,s>].start;
-            var end = steps[<d,s>].end;
-            var alternativeId = alternatives[d]
-           
-            for(var a in Alternatives){
-                if(alternatives[d][a].present && s.stepId == a.stepId){
-                    var resourceId =a.resourceId;
-                    var procCost = a.fixedProcessingCost + a.variableProcessingCost * d.quantity;
-                }              
-            }
-           
-            var setupResourceId = s.setupResourceId;
-            var startTimeSetup = setupResources[<d,s>].start;
-            var endTimeSetup = setupResources[<d,s>].end;
-            var setupCost = setupCostPerStep[<d,s>];
-           
-            stepAssignments.add(demandId, stepId, start, end, resourceId, procCost, setupCost, startTimeSetup, endTimeSetup, setupResourceId);
-           
-           	var storageTankId = "";  
-           	var storageStartTime=0;
-           	 var storageEndTime=0;
-           for(st in StorageTanks){
-           	if(storageResources[d][s][st].present && d.productId == s.productId){
-           	storageTankId = st.storageTankId;       
-             storageStartTime  = storageResources[<d,s>][st].start;
-            storageEndTime  = storageResources[<d,s>][st].end;    	
-           	}           
-           }
-            var quantity  = d.quantity;
-           
-            storageAssignments.add(demandId, stepId, storageStartTime, storageEndTime, quantity, storageTankId);
-        }  
-    }  
-   
-   
-   
- 
     writeln("Total Non-Delivery Cost    : ", TotalNonDeliveryCost);
     writeln("Total Processing Cost      : ", TotalProcessingCost);
     writeln("Total Setup Cost           : ", TotalSetupCost);
@@ -370,4 +321,4 @@ execute {
           " which is consumed at time ", sta.endTime); 
       }      
     }
-}*/
+}
