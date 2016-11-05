@@ -128,11 +128,11 @@ dvar sequence resourceUsage[r in Resources] in
 	all(a in Alternatives, d in Demands:a.resourceId == r.resourceId && d.productId == item(Steps, <a.stepId>).productId) alternatives[<d,a>]
     types all(a in Alternatives, d in Demands:a.resourceId == r.resourceId && d.productId == item(Steps, <a.stepId>).productId) d.productId;
 
-dvar interval storageResources[d in Demands][s in Steps][st in StorageTanks]
+dvar interval storageResources[<d,s> in DemSteps][st in StorageTanks]
 	optional(true);
 	
-cumulFunction storageUsageFunction[st in StorageTanks] = (sum(d in Demands, s in Steps, sp in StorageProductions:d.productId==s.productId && 
-	sp.prodStepId == s.stepId && sp.storageTankId == st.storageTankId) pulse(storageResources[d][s][st], d.quantity));
+cumulFunction storageUsageFunction[st in StorageTanks] = (sum(<d,s> in DemSteps, sp in StorageProductions:
+	sp.prodStepId == s.stepId && sp.storageTankId == st.storageTankId) pulse(storageResources[<d,s>][st], d.quantity));
 
 dexpr float NonDeliveryPerDemand[d in Demands] = (1-presenceOf(demands[d])) * d.quantity * d.nonDeliveryVariableCost;
 dexpr float TotalNonDeliveryCost = sum(d in Demands) NonDeliveryPerDemand[d];
@@ -177,13 +177,6 @@ stateFunction state[st in StorageTanks] with storageTransitions[st];
 minimize WeightedTotalNonDeliveryCost + WeightedTotalTardinessCost + WeightedTotalProcessingCost + WeightedTotalSetupCost;
 
 subject to{
-	//redundancy constraints
-	WeightedTotalNonDeliveryCost >= 0;
-	WeightedTotalTardinessCost >= 0;
-	WeightedTotalProcessingCost >= 0;
-	WeightedTotalSetupCost >= 0;
-/*WeightedTotalNonDeliveryCost + WeightedTotalTardinessCost + WeightedTotalProcessingCost + WeightedTotalSetupCost >=
-sum(d in Demands) minl(d.nonDeliveryVariableCost*d.quantity, )*/
 
 	forall(d in Demands){
 		forall(p in Precedences:item(Steps, <p.predecessorId>).productId==d.productId){
@@ -214,9 +207,10 @@ sum(d in Demands) minl(d.nonDeliveryVariableCost*d.quantity, )*/
 		forall(sp in StorageProductions, s in Steps:item(Steps, <sp.prodStepId>).productId==d.productId && s.stepId == sp.prodStepId){
 				//If there is time between steps, a storage resource is needed
 				endOf(steps[<d,s>]) < startOf(steps[<d,item(Steps, <sp.consStepId>)>])=>
-					(sum(st in StorageTanks) (startOf(storageResources[d][s][st]) == endOf(steps[<d,s>]) &&
-					endOf(storageResources[d][s][st]) == startOf(steps[<d,item(Steps, <sp.consStepId>)>]))==1);
-					sum(st in StorageTanks)presenceOf(storageResources[d][s][st])<=1;					
+					(sum(st in StorageTanks) (startOf(storageResources[<d,s>][st]) == endOf(steps[<d,s>]) &&
+					endOf(storageResources[<d,s>][st]) == startOf(steps[<d,item(Steps, <sp.consStepId>)>]))==1);
+				//After producing, at most 1 storage tank is used
+				sum(st in StorageTanks) presenceOf(storageResources[<d,s>][st])<=1;					
 		}		
 	}
 	forall(r in Resources){
@@ -232,7 +226,7 @@ sum(d in Demands) minl(d.nonDeliveryVariableCost*d.quantity, )*/
 		storageUsageFunction[st] <= st.quantityMax;	
 		forall(s in Steps, sp in StorageProductions, d in Demands:d.productId == s.productId&&s.stepId == sp.prodStepId && st.storageTankId == sp.storageTankId){
 			//The state (product id) of a storage resource must remain the same throughout the storage of a product
-			alwaysEqual(state[st], storageResources[d][s][item(StorageTanks, <sp.storageTankId>)], s.productId, 0, 0);
+			alwaysEqual(state[st], storageResources[<d,s>][item(StorageTanks, <sp.storageTankId>)], s.productId, 0, 0);
 		}	
 	}
 }
@@ -273,9 +267,9 @@ tuple StorageAssignment {
   string storageTankId;
 };
  
-{StorageAssignment} storageAssignments = {<d.demandId, sp.prodStepId, startOf(storageResources[d][s][st]), endOf(storageResources[d][s][st])
+{StorageAssignment} storageAssignments = {<d.demandId, sp.prodStepId, startOf(storageResources[<d,s>][st]), endOf(storageResources[<d,s>][st])
 	, d.quantity, st.storageTankId>|d in Demands, s in Steps, st in StorageTanks, sp in StorageProductions:
-	d.productId==s.productId && sp.prodStepId == s.stepId && presenceOf(storageResources[d][s][st])};
+	d.productId==s.productId && sp.prodStepId == s.stepId && presenceOf(storageResources[<d,s>][st])};
  
  
 execute {
