@@ -159,7 +159,7 @@ execute{
 	cp.param.Workers = 1;
 	cp.param.TimeLimit = Opl.card(Demands);	
 	var f = cp.factory;
-	cp.setSearchPhases(f.searchPhase(resourceUsage));
+	//cp.setSearchPhases(f.searchPhase(resourceUsage));
 	for(var r in Resources) {
        	for(var s in Setups) {
        		if(s.setupMatrixId == r.setupMatrix && r.setupMatrix != "NULL"){       	
@@ -183,6 +183,7 @@ subject to{
 			//Each step should start within the delay period after the previous step								
 			endOf(steps[<d,item(Steps, <p.predecessorId>)>], -1) + p.delayMin <= startOf(steps[<d,item(Steps, <p.successorId>)>], maxint);
 			endOf(steps[<d,item(Steps, <p.predecessorId>)>], maxint) + p.delayMax >= startOf(steps[<d,item(Steps, <p.successorId>)>], -1);
+			
 		}
 		//size of a demand interval corresponds to the size of all of its steps
 		span(demands[d], all(s in Steps:s.productId==d.productId) steps[<d,s>]);
@@ -193,8 +194,9 @@ subject to{
 		}		
 		forall(r in Resources){
 			forall(a in Alternatives:d.productId == item(Steps, <a.stepId>).productId&&a.resourceId==r.resourceId && r.setupMatrix!="NULL"){
-				//A setup resource usage ends when the setup is done (and the next step starts)
+				//A setup resource is needed if there was a previoud product id (so not -1) and the alternative is present
 				//If both the time and the cost are 0, the setup resource is not needed
+				//A setup resource usage ends when the setup is done (and the next step starts)
 				(typeOfPrev(resourceUsage[r], alternatives[<d,a>], r.initialProductId, -1)!=-1 &&
 					presenceOf(alternatives[<d,a>]) &&
 					!(setupTimeArray[r][typeOfPrev(resourceUsage[r], alternatives[<d,a>], r.initialProductId)][d.productId]==0 &&
@@ -207,11 +209,12 @@ subject to{
 		forall(sp in StorageProductions, s in Steps:item(Steps, <sp.prodStepId>).productId==d.productId && s.stepId == sp.prodStepId){
 				//If there is time between steps, a storage resource is needed
 				endOf(steps[<d,s>]) < startOf(steps[<d,item(Steps, <sp.consStepId>)>])=>
-					(sum(st in StorageTanks) (startOf(storageResources[<d,s>][st]) == endOf(steps[<d,s>]) &&
-					endOf(storageResources[<d,s>][st]) == startOf(steps[<d,item(Steps, <sp.consStepId>)>]))==1);
+					(sum(sp in StorageProductions:sp.prodStepId == s.stepId) 
+					(startOf(storageResources[<d,s>][item(StorageTanks, <sp.storageTankId>)]) == endOf(steps[<d,s>]) &&
+					endOf(storageResources[<d,s>][item(StorageTanks, <sp.storageTankId>)]) == startOf(steps[<d,item(Steps, <sp.consStepId>)>]))==1);
 				//After producing, at most 1 storage tank is used
 				sum(st in StorageTanks) presenceOf(storageResources[<d,s>][st])<=1;					
-		}		
+		}	
 	}
 	forall(r in Resources){
 		//Resource usage cannot overlap, taking transition times into account
@@ -267,12 +270,18 @@ tuple StorageAssignment {
   string storageTankId;
 };
  
-{StorageAssignment} storageAssignments = {<d.demandId, sp.prodStepId, startOf(storageResources[<d,s>][st]), endOf(storageResources[<d,s>][st])
-	, d.quantity, st.storageTankId>|d in Demands, s in Steps, st in StorageTanks, sp in StorageProductions:
-	d.productId==s.productId && sp.prodStepId == s.stepId && presenceOf(storageResources[<d,s>][st])};
+{StorageAssignment} storageAssignments = {<d.demandId, sp.prodStepId, startOf(storageResources[<d,s>][item(StorageTanks, <sp.storageTankId>)]), 
+	endOf(storageResources[<d,s>][item(StorageTanks, <sp.storageTankId>)])
+	, d.quantity, item(StorageTanks, <sp.storageTankId>).storageTankId>|<d,s> in DemSteps,sp in StorageProductions:
+	sp.prodStepId == s.stepId && presenceOf(storageResources[<d,s>][item(StorageTanks, <sp.storageTankId>)]) };
  
  
 execute {
+
+
+
+
+
     writeln("Total Non-Delivery Cost    : ", TotalNonDeliveryCost);
     writeln("Total Processing Cost      : ", TotalProcessingCost);
     writeln("Total Setup Cost           : ", TotalSetupCost);
