@@ -137,15 +137,15 @@ cumulFunction storageUsageFunction[st in StorageTanks] = (sum(d in Demands, s in
 dexpr float NonDeliveryPerDemand[d in Demands] = (1-presenceOf(demands[d])) * d.quantity * d.nonDeliveryVariableCost;
 dexpr float TotalNonDeliveryCost = sum(d in Demands) NonDeliveryPerDemand[d];
 
-dexpr float processingCostPerStep[d in Demands][s in Steps] = sum(a in Alternatives:a.stepId == s.stepId)
+dexpr float processingCostPerStep[<d, s> in DemSteps] = sum(a in Alternatives:a.stepId == s.stepId)
 	presenceOf(alternatives[<d,a>]) * (a.fixedProcessingCost + a.variableProcessingCost * d.quantity);
-dexpr float TotalProcessingCost =  sum(d in Demands, s in Steps:d.productId == s.productId) processingCostPerStep[d][s];
+dexpr float TotalProcessingCost =  sum(d in Demands, s in Steps:d.productId == s.productId) processingCostPerStep[<d,s>];
 
-dexpr float setupCostPerStep[d in Demands][s in Steps] =  sum(r in Resources:r.setupMatrix != "NULL") 
+dexpr float setupCostPerStep[<d, s> in DemSteps] =  sum(r in Resources:r.setupMatrix != "NULL") 
 	sum(a in Alternatives:a.resourceId == r.resourceId && s.productId ==d.productId && a.stepId == s.stepId) 
-	(typeOfPrev(resourceUsage[r], alternatives[<d,a>], r.initialProductId, -1)!=-1)*
+	(typeOfPrev(resourceUsage[r], alternatives[<d,a>], r.initialProductId, -1)!=-1)*presenceOf(alternatives[<d,a>])*
 	setupCostArray[r][typeOfPrev(resourceUsage[r], alternatives[<d,a>], (r.initialProductId>=0) * r.initialProductId, 0)][item(Steps, <a.stepId>).productId];
-dexpr float TotalSetupCost = sum(d in Demands, s in Steps:d.productId == s.productId) setupCostPerStep[d][s];
+dexpr float TotalSetupCost = sum(d in Demands, s in Steps:d.productId == s.productId) setupCostPerStep[<d,s>];
 
 dexpr float TardinessPerDemand[d in Demands] =  ((endOf(demands[d]) - d.dueTime)*(d.dueTime<endOf(demands[d])))*d.tardinessVariableCost;
 dexpr float TotalTardinessCost = sum(d in Demands)TardinessPerDemand[d];
@@ -157,7 +157,9 @@ dexpr float WeightedTotalTardinessCost = item(CriterionWeights, <"TardinessCost"
 
 execute{
 	cp.param.Workers = 1;
-	//cp.param.TimeLimit = Opl.card(Demands);	
+	cp.param.TimeLimit = Opl.card(Demands);	
+	var f = cp.factory;
+	cp.setSearchPhases(f.searchPhase(resourceUsage));
 	for(var r in Resources) {
        	for(var s in Setups) {
        		if(s.setupMatrixId == r.setupMatrix && r.setupMatrix != "NULL"){       	
@@ -212,9 +214,9 @@ sum(d in Demands) minl(d.nonDeliveryVariableCost*d.quantity, )*/
 		forall(sp in StorageProductions, s in Steps:item(Steps, <sp.prodStepId>).productId==d.productId && s.stepId == sp.prodStepId){
 				//If there is time between steps, a storage resource is needed
 				endOf(steps[<d,s>]) < startOf(steps[<d,item(Steps, <sp.consStepId>)>])=>
-					((sum(st in StorageTanks) (startOf(storageResources[d][s][st]) == endOf(steps[<d,s>]) &&
-					endOf(storageResources[d][s][st]) == startOf(steps[<d,item(Steps, <sp.consStepId>)>]))==1)&&
-					(sum(st in StorageTanks)presenceOf(storageResources[d][s][st])==1));					
+					(sum(st in StorageTanks) (startOf(storageResources[d][s][st]) == endOf(steps[<d,s>]) &&
+					endOf(storageResources[d][s][st]) == startOf(steps[<d,item(Steps, <sp.consStepId>)>]))==1);
+					sum(st in StorageTanks)presenceOf(storageResources[d][s][st])<=1;					
 		}		
 	}
 	forall(r in Resources){
@@ -259,7 +261,7 @@ tuple StepAssignment {
 };
  
 {StepAssignment} stepAssignments = {<d.demandId, s.stepId, startOf(steps[<d,s>]), endOf(steps[<d,s>])
-	, a.resourceId, processingCostPerStep[d][s], setupCostPerStep[d][s], startOf(setupResources[<d,s>]), endOf(setupResources[<d,s>])
+	, a.resourceId, processingCostPerStep[<d,s>], setupCostPerStep[<d,s>], startOf(setupResources[<d,s>]), endOf(setupResources[<d,s>])
 	,s.setupResourceId>|s in Steps, d in Demands, a in Alternatives:d.productId==s.productId && s.stepId==a.stepId && presenceOf(alternatives[<d,a>])};
  
 tuple StorageAssignment {
