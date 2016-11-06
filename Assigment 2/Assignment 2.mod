@@ -166,12 +166,40 @@ dexpr float WeightedTotalTardinessCost = item(CriterionWeights, <"TardinessCost"
 execute{
 	cp.param.Workers = 1;
 	cp.param.TimeLimit = Opl.card(Demands);	
-	cp.param.DefaultInferenceLevel = 5;
-	//cp.param.DynamicProbingStrength=0.5;
-	cp.param.RestartFailLimit = 70;
-	var f = cp.factory;
-	//cp.setSearchPhases(f.searchPhase(alternatives));
 	
+	//default
+	cp.param.DefaultInferenceLevel = 5;
+	cp.param.RestartFailLimit = 70;
+	
+	//instance0:
+	/*cp.param.DefaultInferenceLevel = 5;
+	cp.param.RestartFailLimit = 70;
+	var f = cp.factory;	
+	cp.setSearchPhases(f.searchPhase(alternatives), f.searchPhase(steps));*/
+	
+	//instance1:
+	/*cp.param.DefaultInferenceLevel = 5;
+	cp.param.RestartFailLimit = 70;
+	var f = cp.factory;	
+	cp.setSearchPhases(f.searchPhase(alternatives), f.searchPhase(steps));*/
+	
+	//instance2:
+	/*cp.param.DefaultInferenceLevel = 4;
+	cp.param.RestartFailLimit = 130;
+	var f = cp.factory;	*/
+	
+	//instance3:
+	/*cp.param.DefaultInferenceLevel = 5;
+	cp.param.RestartFailLimit = 70;
+	var f = cp.factory;	
+	cp.setSearchPhases(f.searchPhase(alternatives));*/
+	
+	//instance 4:
+	/*cp.param.DefaultInferenceLevel = 6;
+	cp.param.RestartFailLimit = 70;
+	var f = cp.factory;	
+	cp.setSearchPhases(f.searchPhase(alternatives), f.searchPhase(steps));*/
+		
 	for(var r in Resources) {
        	for(var s in Setups) {
        		if(s.setupMatrixId == r.setupMatrix && r.setupMatrix != "NULL"){       	
