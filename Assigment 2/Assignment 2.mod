@@ -166,15 +166,15 @@ dexpr float WeightedTotalTardinessCost = item(CriterionWeights, <"TardinessCost"
 execute{
 	cp.param.Workers = 1;
 	cp.param.TimeLimit = Opl.card(Demands);	
+	
 	//default
 	cp.param.DefaultInferenceLevel = 5;
-	cp.param.RestartFailLimit = 70;
 	
 	//instance0:
-	cp.param.DefaultInferenceLevel = 5;
+	/*cp.param.DefaultInferenceLevel = 5;
 	cp.param.RestartFailLimit = 70;
 	var f = cp.factory;	
-	cp.setSearchPhases(f.searchPhase(alternatives));
+	cp.setSearchPhases(f.searchPhase(alternatives));*/
 	
 	//instance1:
 	/*cp.param.DefaultInferenceLevel = 5;
