@@ -137,7 +137,7 @@ dvar sequence resourceUsage[r in Resources] in
 dvar interval storageResources[<d,s> in DemSteps][st in StorageTanks]
 	optional(true);
 
-//function that indicates the quantoty in a storage tank at a certain time
+//function that indicates the quantity in a storage tank at a certain time
 cumulFunction storageUsageFunction[st in StorageTanks] = (sum(<d,s> in DemSteps, sp in StorageProductions:
 	sp.prodStepId == s.stepId && sp.storageTankId == st.storageTankId) pulse(storageResources[<d,s>][st], d.quantity));
 
@@ -166,10 +166,12 @@ dexpr float WeightedTotalTardinessCost = item(CriterionWeights, <"TardinessCost"
 execute{
 	cp.param.Workers = 1;
 	cp.param.TimeLimit = Opl.card(Demands);	
-	cp.param.DefaultInferenceLevel = "Extended"; 
-	//cp.param.RestartFailLimit = 40;
+	cp.param.DefaultInferenceLevel = 5;
+	//cp.param.DynamicProbingStrength=0.5;
+	cp.param.RestartFailLimit = 70;
 	var f = cp.factory;
-	cp.setSearchPhases(f.searchPhase(alternatives));
+	//cp.setSearchPhases(f.searchPhase(alternatives));
+	
 	for(var r in Resources) {
        	for(var s in Setups) {
        		if(s.setupMatrixId == r.setupMatrix && r.setupMatrix != "NULL"){       	
@@ -194,11 +196,11 @@ subject to{
 		forall(s in Steps:s.productId == d.productId){		
 			//one alternative needs to be present if a step is present
 			alternative(steps[<d,s>], all(a in Alternatives:a.stepId==s.stepId) alternatives[<d,a>]);	
-			presenceOf(demands[d])=>presenceOf(steps[<d,s>]);			
+			presenceOf(demands[d])==presenceOf(steps[<d,s>]);			
 		}	
 		forall(p in Precedences:item(Steps, <p.predecessorId>).productId==d.productId){
-			//Each step should start within the delay period after the previous step								
-			endOf(steps[<d,item(Steps, <p.predecessorId>)>], -1000000) + p.delayMin <= startOf(steps[<d,item(Steps, <p.successorId>)>], maxint);
+			//Each step should start within the delay period after the previous step	
+			endBeforeStart(steps[<d,item(Steps, <p.predecessorId>)>], steps[<d,item(Steps, <p.successorId>)>], p.delayMin);						
 			endOf(steps[<d,item(Steps, <p.predecessorId>)>], maxint) + p.delayMax >= startOf(steps[<d,item(Steps, <p.successorId>)>], -1000000);
 		}	
 		forall(r in Resources,a in Alternatives:d.productId == item(Steps, <a.stepId>).productId&&a.resourceId==r.resourceId && r.setupMatrix!="NULL"){
@@ -206,7 +208,6 @@ subject to{
 			//If both the time and the cost are 0, the setup resource is not needed
 			//A setup resource usage ends when the setup is done (and the next step starts)
 			(typeOfPrev(resourceUsage[r], alternatives[<d,a>], r.initialProductId, -1)!=-1 &&
-				presenceOf(alternatives[<d,a>]) &&
 				setupTimeArray[r][typeOfPrev(resourceUsage[r], alternatives[<d,a>], r.initialProductId)][d.productId]!=0) =>
 				(endOf(setupResources[<d,item(Steps, <a.stepId>)>]) == startOf(alternatives[<d,a>]) && 
 				sizeOf(setupResources[<d,item(Steps, <a.stepId>)>]) == 
@@ -219,7 +220,7 @@ subject to{
 				(startOf(storageResources[<d,s>][item(StorageTanks, <sp.storageTankId>)]) == endOf(steps[<d,s>]) &&
 				endOf(storageResources[<d,s>][item(StorageTanks, <sp.storageTankId>)]) == startOf(steps[<d,item(Steps, <sp.consStepId>)>]))==1);
 			//After producing, at most 1 storage tank is used
-			sum(st in StorageTanks) presenceOf(storageResources[<d,s>][st])<=1;					
+			sum(st in StorageTanks) presenceOf(storageResources[<d,s>][st])==1;					
 		}	
 		//End of the demand needs to be after deliveryMin
 		presenceOf(demands[d])=>(endOf(demands[d],maxint)>=d.deliveryMin);
@@ -242,8 +243,8 @@ subject to{
 	}
 	
 	//redundant constraints
-	forall(d in Demands){
-		endOf(demands[d], 0) <= d.dueTime + (d.nonDeliveryVariableCost*d.quantity) / d.tardinessVariableCost;
+	forall(d in Demands:d.tardinessVariableCost>0){
+		presenceOf(demands[d])=>endOf(demands[d]) <= d.dueTime + (d.nonDeliveryVariableCost*d.quantity / d.tardinessVariableCost);
 	}
 }
 
